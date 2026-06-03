@@ -222,7 +222,35 @@ function injectContentScript(html) {
   const CANVAS_ID = '__opticlick_overlay__';
   const BLOCKER_ID = '__opticlick_blocker__';
 
-  // ── Overlay (SOM) ────────────────────────────────────────────────────────
+  const LIGHT = {
+    markStroke:    '#0284c7',
+    markFill:      'rgba(2, 132, 199, 0.07)',
+    badgeBg:       '#0284c7',
+    badgeText:     '#ffffff',
+    blockerBg:     'radial-gradient(ellipse at center, rgba(14, 165, 233, 0) 60%, rgba(14, 165, 233, 0.9) 120%)',
+    bannerBg:      'rgba(2, 132, 199, 0)',
+  };
+  const DARK = {
+    markStroke:    '#38bdf8',
+    markFill:      'rgba(56, 189, 248, 0.08)',
+    badgeBg:       '#0369a1',
+    badgeText:     '#ffffff',
+    blockerBg:     'radial-gradient(ellipse at center, rgba(2, 132, 199, 0.20) 60%, rgba(2, 132, 199, 0.9) 120%)',
+    bannerBg:      'rgba(3, 105, 161, 0)',
+  };
+
+  async function getTheme() {
+    try {
+      if (window.parent && window.parent.chrome?.storage?.local) {
+        const res = await window.parent.chrome.storage.local.get('opticlickTheme');
+        if (res && res.opticlickTheme) {
+          return res.opticlickTheme === 'dark' ? DARK : LIGHT;
+        }
+      }
+    } catch(e){}
+    return LIGHT;
+  }
+
   function collectInteractables() {
     const tags = 'a,button,input,select,textarea,[role=button],[role=link],[role=checkbox],[role=radio],[role=tab],[role=menuitem],[onclick],[tabindex]';
     return [...document.querySelectorAll(tags)].filter(el => {
@@ -235,8 +263,9 @@ function injectContentScript(html) {
     return (el.getAttribute('aria-label') || el.innerText || el.value || el.placeholder || el.title || el.alt || el.tagName.toLowerCase()).slice(0, 80).trim();
   }
 
-  function drawOverlay() {
+  async function drawOverlay() {
     destroyOverlay();
+    const theme = await getTheme();
     const dpr = window.devicePixelRatio || 1;
     const w = window.innerWidth, h = window.innerHeight;
     const els = collectInteractables();
@@ -253,20 +282,47 @@ function injectContentScript(html) {
     for (const el of els) {
       const r = el.getBoundingClientRect();
       if (r.width < 4 || r.height < 4) continue;
-      ctx.strokeStyle = 'rgba(255,100,0,0.9)';
+      
+      ctx.strokeStyle = theme.markStroke;
       ctx.lineWidth = 1.5;
-      ctx.fillStyle = 'rgba(255,100,0,0.12)';
-      ctx.strokeRect(r.left+.5,r.top+.5,r.width-1,r.height-1);
-      ctx.fillRect(r.left+1,r.top+1,r.width-2,r.height-2);
+      ctx.strokeRect(r.left + 0.5, r.top + 0.5, r.width - 1, r.height - 1);
+      
+      ctx.fillStyle = theme.markFill;
+      ctx.fillRect(r.left + 1, r.top + 1, r.width - 2, r.height - 2);
+      
       const label = String(id);
-      const bw = Math.max(label.length*7+8,20), bh = 16;
-      ctx.fillStyle='#ff6400';
-      ctx.fillRect(r.left, Math.max(0,r.top-bh-1), bw, bh);
-      ctx.fillStyle='#fff';
-      ctx.font='bold 10px sans-serif';
-      ctx.textBaseline='middle';
-      ctx.fillText(label, r.left+4, Math.max(bh/2, r.top-bh/2-1));
-      map.push({ id, tag: el.tagName.toLowerCase(), text: getLabel(el), rect: { x: Math.round(r.left+r.width/2), y: Math.round(r.top+r.height/2), left: Math.round(r.left), top: Math.round(r.top), width: Math.round(r.width), height: Math.round(r.height) } });
+      const badgeW = Math.max(label.length * 7 + 8, 20);
+      const badgeH = 16;
+      const badgeX = r.left;
+      const badgeY = r.top - badgeH - 1;
+      
+      ctx.fillStyle = theme.badgeBg;
+      ctx.beginPath();
+      if (ctx.roundRect) {
+        ctx.roundRect(badgeX, Math.max(0, badgeY), badgeW, badgeH, 3);
+      } else {
+        ctx.rect(badgeX, Math.max(0, badgeY), badgeW, badgeH);
+      }
+      ctx.fill();
+      
+      ctx.fillStyle = theme.badgeText;
+      ctx.font = 'bold 10px -apple-system, sans-serif';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(label, badgeX + 4, Math.max(badgeH / 2, badgeY + badgeH / 2));
+      
+      map.push({
+        id,
+        tag: el.tagName.toLowerCase(),
+        text: getLabel(el),
+        rect: {
+          x: Math.round(r.left + r.width / 2),
+          y: Math.round(r.top + r.height / 2),
+          left: Math.round(r.left),
+          top: Math.round(r.top),
+          width: Math.round(r.width),
+          height: Math.round(r.height)
+        }
+      });
       id++;
     }
     return map;
@@ -276,47 +332,67 @@ function injectContentScript(html) {
     document.getElementById(CANVAS_ID)?.remove();
   }
 
-  // ── Blocker ──────────────────────────────────────────────────────────────
-  function installBlocker() {
+  async function installBlocker() {
     if (document.getElementById(BLOCKER_ID)) return;
+    const theme = await getTheme();
     const div = document.createElement('div');
     div.id = BLOCKER_ID;
-    div.style.cssText = 'position:fixed;inset:0;z-index:2147483646;background:rgba(0,0,0,0.3);cursor:not-allowed;';
+    div.style.cssText = 'position:fixed;inset:0;z-index:2147483646;background:' + theme.blockerBg + ';cursor:not-allowed;pointer-events:none;box-sizing:border-box;';
+    
     const banner = document.createElement('div');
-    banner.style.cssText = 'position:absolute;top:0;left:0;right:0;padding:10px;background:#1a1a2e;color:#fff;font:bold 13px sans-serif;text-align:center;letter-spacing:1px;';
+    banner.style.cssText = 'position:absolute;top:0;left:0;right:0;padding:10px 0;background:' + theme.bannerBg + ';color:#fff;font:bold 14px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;text-align:center;letter-spacing:1.5px;text-transform:uppercase;pointer-events:none;animation:__opticlick_pulse__ 1.5s ease-in-out infinite;';
     banner.textContent = 'Opticlick Agent Running — Tab Locked';
     div.appendChild(banner);
-    document.body.appendChild(div);
+    
+    const style = document.createElement('style');
+    style.textContent = '@keyframes __opticlick_pulse__ { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } } body.' + BLOCKER_ID + '-active, body.' + BLOCKER_ID + '-active * { cursor: not-allowed !important; }';
+    div.appendChild(style);
+    
+    (document.body || document.documentElement).appendChild(div);
+    document.body?.classList.add(BLOCKER_ID + '-active');
   }
 
   function removeBlocker() {
     document.getElementById(BLOCKER_ID)?.remove();
+    document.body?.classList.remove(BLOCKER_ID + '-active');
   }
 
-  // ── Message bridge ───────────────────────────────────────────────────────
-  window.addEventListener('message', function(event) {
+  window.addEventListener('message', async function(event) {
     if (!event.data?.__opticlick__) return;
     const { id, type } = event.data;
-    const reply = function(data) {
-      event.source.postMessage({ __opticlick_reply__: true, id, response: data }, '*');
-    };
-
+    const reply = data => event.source.postMessage({ __opticlick_reply__: true, id, response: data }, '*');
     switch (type) {
       case 'DRAW_MARKS': {
-        const coordinateMap = drawOverlay();
+        const coordinateMap = await drawOverlay();
         reply({ success: true, coordinateMap, dpr: window.devicePixelRatio || 1 });
         break;
       }
-      case 'DESTROY_MARKS': destroyOverlay(); reply({ success: true }); break;
-      case 'BLOCK_INPUT': installBlocker(); reply({ success: true }); break;
-      case 'UNBLOCK_INPUT': removeBlocker(); reply({ success: true }); break;
-      case 'PING': reply({ alive: true }); break;
+      case 'DESTROY_MARKS': {
+        destroyOverlay();
+        reply({ success: true });
+        break;
+      }
+      case 'BLOCK_INPUT': {
+        await installBlocker();
+        reply({ success: true });
+        break;
+      }
+      case 'UNBLOCK_INPUT': {
+        removeBlocker();
+        reply({ success: true });
+        break;
+      }
+      case 'PING': {
+        reply({ alive: true });
+        break;
+      }
       case 'GET_ELEMENT_DOM': {
         const el = document.elementFromPoint(event.data.x, event.data.y);
         reply({ success: true, outerHTML: el?.outerHTML?.slice(0, 2000) ?? '' });
         break;
       }
-      default: reply({ success: false, error: 'unknown type: ' + type });
+      default:
+        reply({ success: false, error: 'unknown:' + type });
     }
   });
 

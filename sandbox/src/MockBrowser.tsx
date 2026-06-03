@@ -77,13 +77,20 @@ export function MockBrowser({ initialUrl = 'https://example.com' }: MockBrowserP
 
   const handleIframeLoad = () => {
     setIsLoading(false);
-    // Try to read actual URL from iframe (may fail cross-origin before proxy is active)
     try {
       const iframeUrl = iframeRef.current?.contentWindow?.location?.href;
-      if (iframeUrl && !iframeUrl.includes('/__proxy__/')) {
-        setAddressInput(iframeUrl);
-        setCurrentUrlState(iframeUrl);
-        setCurrentUrl(iframeUrl);
+      if (iframeUrl) {
+        let displayUrl = iframeUrl;
+        if (iframeUrl.includes('/__proxy__/')) {
+          try {
+            const urlObj = new URL(iframeUrl);
+            const target = urlObj.searchParams.get('url');
+            if (target) displayUrl = target;
+          } catch { /* */ }
+        }
+        setAddressInput(displayUrl);
+        setCurrentUrlState(displayUrl);
+        setCurrentUrl(displayUrl);
       }
     } catch { /* cross-origin, ignore */ }
   };
