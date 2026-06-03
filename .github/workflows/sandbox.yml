@@ -1,0 +1,128 @@
+name: PR Sandbox — Build & Deploy
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, closed]
+
+# Needed to post PR comments and push to gh-pages
+permissions:
+  contents: write
+  pull-requests: write
+  pages: write
+
+jobs:
+  # ── Deploy sandbox on PR open / update ────────────────────────────────────────
+  deploy:
+    name: Deploy sandbox preview
+    runs-on: ubuntu-latest
+    if: github.event.action != 'closed'
+
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Install sandbox dependencies
+        run: npm ci
+        working-directory: sandbox
+
+      - name: Build sandbox
+        env:
+          VITE_BASE_PATH: /opticlick/previews/pr-${{ github.event.number }}/
+          VITE_PR_NUMBER: ${{ github.event.number }}
+          VITE_BRANCH_NAME: ${{ github.head_ref }}
+        run: npm run build
+        working-directory: sandbox
+
+      # Checkout gh-pages branch into a temp dir, update it, push
+      - name: Checkout gh-pages
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          path: gh-pages-branch
+
+      - name: Copy sandbox build to gh-pages
+        run: |
+          mkdir -p gh-pages-branch/previews/pr-${{ github.event.number }}
+          cp -r sandbox/dist/. gh-pages-branch/previews/pr-${{ github.event.number }}/
+
+      - name: Commit and push to gh-pages
+        run: |
+          cd gh-pages-branch
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add previews/pr-${{ github.event.number }}/
+          git diff --staged --quiet || git commit -m "sandbox: deploy preview for PR #${{ github.event.number }} (${{ github.sha }})"
+          git push
+
+      - name: Post preview URL comment
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          issue-number: ${{ github.event.number }}
+          body: |
+            ## 🧪 Sandbox Preview
+
+            | | |
+            |---|---|
+            | **Preview URL** | [${{ github.repository_owner }}.github.io/opticlick/previews/pr-${{ github.event.number }}/](https://${{ github.repository_owner }}.github.io/opticlick/previews/pr-${{ github.event.number }}/) |
+            | **Branch** | `${{ github.head_ref }}` |
+            | **Commit** | `${{ github.sha }}` |
+
+            ### What is this?
+            A live preview of the extension's sidepanel UI alongside a **real mock browser** — the agent can actually navigate, annotate, and interact with any website through the built-in proxy.
+
+            > **Note**: Enter your API key in the sidepanel's setup screen. The session is stateless (API keys are stored in browser localStorage, not saved to any server).
+
+            ---
+            *Updated automatically on each push. Deployed at `r{{ github.run_number }}`.*
+          comment-author: 'github-actions[bot]'
+          edit-mode: replace
+
+  # ── Cleanup sandbox on PR close ───────────────────────────────────────────────
+  cleanup:
+    name: Cleanup sandbox preview
+    runs-on: ubuntu-latest
+    if: github.event.action == 'closed'
+
+    steps:
+      - name: Checkout gh-pages
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+
+      - name: Remove preview directory
+        run: |
+          if [ -d "previews/pr-${{ github.event.number }}" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git rm -rf previews/pr-${{ github.event.number }}/
+            git commit -m "sandbox: remove preview for closed PR #${{ github.event.number }}"
+            git push
+            echo "Removed preview for PR #${{ github.event.number }}"
+          else
+            echo "No preview found for PR #${{ github.event.number }}, skipping."
+          fi
+
+      - name: Update PR comment on close
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          issue-number: ${{ github.event.number }}
+          body: |
+            ## 🧪 Sandbox Preview — Expired
+
+            The sandbox preview for this PR has been removed (PR closed).
+
+            | | |
+            |---|---|
+            | **Branch** | `${{ github.head_ref }}` |
+            | **Status** | ❌ Removed |
+          comment-author: 'github-actions[bot]'
+          edit-mode: replace
