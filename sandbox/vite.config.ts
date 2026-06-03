@@ -40,7 +40,7 @@ function devProxyPlugin() {
             'content-security-policy-report-only', 'x-content-type-options',
             'strict-transport-security', 'cross-origin-opener-policy',
             'cross-origin-embedder-policy', 'cross-origin-resource-policy',
-            'transfer-encoding', // Node handles this itself
+            'transfer-encoding', 'content-encoding', 'content-length',
           ]);
 
           for (const [k, v] of resp.headers.entries()) {
