@@ -8,7 +8,8 @@
 // 1. Install chrome shims — must be first
 import './chrome-mock/index';
 
-// 2. Import CSS
+// 2. Import CSS — sidepanel Tailwind styles first, then sandbox layout styles
+import '@/entrypoints/sidepanel/style.css';
 import './sandbox.css';
 
 // 3. Mount React app

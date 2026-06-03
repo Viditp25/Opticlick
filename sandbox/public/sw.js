@@ -19,6 +19,11 @@ self.addEventListener('activate', e => e.waitUntil(self.clients.claim()));
 self.addEventListener('fetch', event => {
   const url = new URL(event.request.url);
 
+  // In local dev mode, let the Vite dev server handle proxy requests server-side (Node.js) to bypass browser CORS restrictions.
+  if (url.hostname === 'localhost' || url.hostname === '127.0.0.1') {
+    return;
+  }
+
   if (!url.pathname.startsWith(PROXY_PREFIX)) return;
 
   const target = url.searchParams.get('url');
@@ -31,27 +36,63 @@ async function handleProxy(targetUrl, originalRequest) {
   let resolvedUrl = targetUrl;
 
   try {
-    const resp = await fetch(resolvedUrl, {
-      method: originalRequest.method,
+    const fetchInit = {
+      method: originalRequest.method === 'GET' ? 'GET' : originalRequest.method,
       headers: buildProxyHeaders(originalRequest.headers),
       redirect: 'follow',
       credentials: 'omit',
-    });
+      cache: 'no-store',
+    };
+
+    let resp;
+    try {
+      resp = await fetch(resolvedUrl, fetchInit);
+    } catch (firstErr) {
+      // Some browsers block http→https fetches from SW in dev mode.
+      // Try with mode: 'no-cors' as last resort (returns opaque response).
+      try {
+        resp = await fetch(resolvedUrl, { ...fetchInit, mode: 'no-cors' });
+      } catch {
+        throw firstErr; // throw original error
+      }
+    }
+
+    // Opaque response (no-cors) — can't read body, serve a redirect page instead
+    if (resp.type === 'opaque' || resp.status === 0) {
+      const redirectHtml = `<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<style>body{font-family:sans-serif;padding:2rem;background:#f8fafc;color:#1e293b;max-width:600px;margin:auto}</style>
+</head><body>
+<h2>🔒 This site requires direct access</h2>
+<p>The proxy couldn't load <strong>${targetUrl}</strong> due to browser security restrictions in local dev mode.</p>
+<p>This works fine when deployed to GitHub Pages (HTTPS). In local dev, try sites that allow cross-origin requests.</p>
+<hr>
+<p><strong>Suggested test sites:</strong></p>
+<ul>
+  <li><a href="/__proxy__/?url=https://example.com" onclick="event.preventDefault();parent.postMessage({__opticlick_navigate__:true,url:'https://en.wikipedia.org/wiki/Main_Page'},'*')">en.wikipedia.org</a></li>
+  <li><a href="/__proxy__/?url=https://httpbin.org/html">httpbin.org/html</a></li>
+  <li><a href="/__proxy__/?url=https://news.ycombinator.com">news.ycombinator.com</a></li>
+</ul>
+</body></html>`;
+      return new Response(redirectHtml, { status: 200, headers: { 'content-type': 'text/html; charset=utf-8' } });
+    }
 
     // Track final URL after redirects
     resolvedUrl = resp.url || resolvedUrl;
 
     const headers = new Headers();
-    // Copy safe headers
+    // Copy safe headers, strip anything that would block embedding
     for (const [k, v] of resp.headers.entries()) {
       const lower = k.toLowerCase();
-      // Strip all security headers that would block embedding
       if (
         lower === 'x-frame-options' ||
         lower === 'content-security-policy' ||
         lower === 'content-security-policy-report-only' ||
         lower === 'x-content-type-options' ||
-        lower === 'strict-transport-security'
+        lower === 'strict-transport-security' ||
+        lower === 'cross-origin-opener-policy' ||
+        lower === 'cross-origin-embedder-policy' ||
+        lower === 'cross-origin-resource-policy'
       ) continue;
       headers.set(k, v);
     }
@@ -60,7 +101,6 @@ async function handleProxy(targetUrl, originalRequest) {
     const ct = resp.headers.get('content-type') ?? '';
     const isHtml = ct.includes('text/html');
     const isCss = ct.includes('text/css');
-    const isJs = ct.includes('javascript') || ct.includes('ecmascript');
 
     if (isHtml) {
       let html = await resp.text();
@@ -78,29 +118,34 @@ async function handleProxy(targetUrl, originalRequest) {
 
     // Binary/other: pass through
     return new Response(resp.body, { status: resp.status, headers });
+
   } catch (err) {
+    const isNetworkErr = err.message?.includes('fetch') || err.message?.includes('network') || err.name === 'TypeError';
     return new Response(
-      `<html><body style="font-family:sans-serif;padding:2rem;background:#1a1a2e;color:#e2e8f0;">
+      `<!DOCTYPE html><html><body style="font-family:sans-serif;padding:2rem;background:#1a1a2e;color:#e2e8f0;">
         <h2 style="color:#f87171">⚠️ Cannot proxy this page</h2>
         <p>URL: <code>${targetUrl}</code></p>
         <p>Error: ${err.message}</p>
-        <p>Try a different URL, or check if the site blocks cross-origin requests.</p>
+        ${isNetworkErr ? `<p style="color:#94a3b8;font-size:13px">💡 In local dev mode, some sites block cross-origin requests from the proxy.
+        Try: <a href="/__proxy__/?url=https://httpbin.org/html" style="color:#60a5fa">httpbin.org/html</a> or
+        <a href="/__proxy__/?url=https://en.wikipedia.org/wiki/Main_Page" style="color:#60a5fa">wikipedia.org</a></p>` : ''}
       </body></html>`,
-      { status: 502, headers: { 'content-type': 'text/html' } }
+      { status: 502, headers: { 'content-type': 'text/html; charset=utf-8' } }
     );
   }
 }
 
 function buildProxyHeaders(originalHeaders) {
   const h = new Headers();
-  // Only forward safe request headers
-  const safe = ['accept', 'accept-language', 'cache-control'];
-  for (const k of safe) {
-    const v = originalHeaders.get(k);
-    if (v) h.set(k, v);
-  }
+  // Forward safe request headers + spoof a real browser User-Agent
+  h.set('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
+  h.set('Accept', 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8');
+  h.set('Accept-Language', 'en-US,en;q=0.9');
+  const v = originalHeaders.get('cache-control');
+  if (v) h.set('Cache-Control', v);
   return h;
 }
+
 
 /**
  * Rewrite all URLs in HTML to go through the proxy.

@@ -1,4 +1,6 @@
 /* ── Sandbox Layout ── */
+/* NOTE: Tailwind base reset is loaded from @/entrypoints/sidepanel/style.css */
+/* We only add sandbox-specific vars and layout here */
 
 :root {
   --bg-base: #0d1117;
@@ -22,16 +24,13 @@
   --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
 }
 
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
 html, body, #root {
   height: 100%;
   width: 100%;
   overflow: hidden;
   background: var(--bg-base);
-  color: var(--text-primary);
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
 }
+
 
 /* ── Sandbox Shell ─────────────────────────────────────────────────────────── */
 
