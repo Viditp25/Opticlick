@@ -74,13 +74,23 @@ function devProxyPlugin() {
           res.setHeader('content-type', 'text/html; charset=utf-8');
           res.end(`<!DOCTYPE html><html><body style="font-family:sans-serif;padding:2rem;background:#1a1a2e;color:#e2e8f0;">
             <h2 style="color:#f87171">⚠️ Proxy error</h2>
-            <p>URL: <code>${targetUrl}</code></p>
-            <p>${(err as Error).message}</p>
+            <p>URL: <code>${escapeHtml(targetUrl)}</code></p>
+            <p>${escapeHtml(String((err as Error).message || ''))}</p>
           </body></html>`);
         }
       });
     },
   };
+}
+
+function escapeHtml(str: unknown): string {
+  const s = typeof str === 'string' ? str : String(str ?? '');
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
 }
 
 function proxyUrlNode(url: string, base: string): string {
