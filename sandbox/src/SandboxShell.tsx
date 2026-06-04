@@ -39,44 +39,6 @@ function SidebarLoadingFallback() {
 export function SandboxShell() {
   return (
     <div className="sandbox-shell">
-      {/* ── Banner ─────────────────────────────────────────────────────────── */}
-      <div className="sandbox-banner">
-        <div className="sandbox-logo">
-          <div className="sandbox-logo-icon">🧪</div>
-          <span className="sandbox-logo-text">Opticlick Sandbox</span>
-        </div>
-
-        {PR_NUMBER && (
-          <>
-            <span className="sandbox-divider">|</span>
-            <div className="sandbox-pr-badge">
-              <span className="sandbox-pr-badge-dot" />
-              PR #{PR_NUMBER}
-            </div>
-          </>
-        )}
-
-        {BRANCH_NAME && (
-          <div
-            className="sandbox-branch-badge"
-            title={BRANCH_NAME}
-          >
-            ⎇ {BRANCH_NAME}
-          </div>
-        )}
-
-        <div className="sandbox-spacer" />
-
-        <a
-          className="sandbox-info-btn"
-          href="https://github.com/sudip-mondal-2002/Opticlick"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          GitHub ↗
-        </a>
-      </div>
-
       {/* ── Main Split ─────────────────────────────────────────────────────── */}
       <div className="sandbox-content">
         {/* Left: Real sidepanel */}
