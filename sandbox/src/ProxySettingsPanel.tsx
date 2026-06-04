@@ -69,11 +69,17 @@ export function ProxySettingsPanel() {
   }, []);
 
   const handleSave = async () => {
-    const trimmedUrl = proxyUrl.trim();
+    let trimmedUrl = proxyUrl.trim();
     if (!trimmedUrl) {
       handleClear();
       return;
     }
+
+    // Automatically prepend https:// if protocol is missing to prevent relative URL fetching loop
+    if (!trimmedUrl.startsWith('http://') && !trimmedUrl.startsWith('https://')) {
+      trimmedUrl = 'https://' + trimmedUrl;
+    }
+    setProxyUrl(trimmedUrl);
 
     localStorage.setItem(STORAGE_KEY_PROXY, trimmedUrl);
 
@@ -122,12 +128,12 @@ export function ProxySettingsPanel() {
 
   const getStatusBadge = () => {
     if (status === 'active') {
-      return <span className="proxy-status active">Custom Proxy</span>;
+      return <span className="proxy-status active">Custom Worker</span>;
     }
     if (status === 'default') {
       return <span className="proxy-status default">Default Worker</span>;
     }
-    return <span className="proxy-status inactive">Public Proxy</span>;
+    return <span className="proxy-status inactive">Required</span>;
   };
 
   return (
@@ -148,7 +154,7 @@ export function ProxySettingsPanel() {
       {open && (
         <div className="proxy-body">
           <div className="proxy-row">
-            <label className="proxy-label">Cloudflare Worker / Proxy URL</label>
+            <label className="proxy-label">Cloudflare Worker Proxy URL</label>
             <input
               className="proxy-input"
               type="text"
@@ -158,7 +164,7 @@ export function ProxySettingsPanel() {
               spellCheck={false}
             />
             <p style={{ fontSize: 10, color: 'var(--text-muted)', margin: '4px 0 0', lineHeight: 1.4 }}>
-              To bypass CORS restrictions and enable all HTTP methods (like POST/PUT), enter your custom Cloudflare Worker proxy URL. Leave blank to use public proxy fallbacks.
+              Enter your self-hosted Cloudflare Worker CORS proxy URL to allow Opticlick Sandbox to navigate and fetch target websites.
             </p>
           </div>
           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', alignItems: 'center', marginTop: 4 }}>

@@ -60,19 +60,18 @@ export default {
         }
       }
 
-      // Read request body for modifying requests (POST, PUT, DELETE, PATCH, etc.)
-      let body = null;
-      if (request.method !== 'GET' && request.method !== 'HEAD') {
-        body = await request.clone().arrayBuffer();
-      }
-
       // Fetch the target URL, following redirects
-      const response = await fetch(targetUrlStr, {
+      const fetchInit = {
         method: request.method,
         headers: headers,
-        body: body,
         redirect: 'follow'
-      });
+      };
+
+      if (request.method !== 'GET' && request.method !== 'HEAD') {
+        fetchInit.body = await request.clone().arrayBuffer();
+      }
+
+      const response = await fetch(targetUrlStr, fetchInit);
 
       // Re-create the response and add permissive CORS headers
       const responseHeaders = new Headers(response.headers);
