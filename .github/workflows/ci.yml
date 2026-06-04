@@ -37,6 +37,15 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      # ── Auto-increment version (main pushes only) ─────────────────────────────
+      - name: Bump version to 1.0.<commit_count>
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        run: |
+          COMMIT_COUNT=$(git rev-list --count HEAD)
+          NEW_VERSION="1.0.${COMMIT_COUNT}"
+          npm version "$NEW_VERSION" --no-git-tag-version --allow-same-version
+          echo "📦 Extension version set to $NEW_VERSION"
+
       # ── Build (required before any tests) ────────────────────────────────────
       - name: Build
         run: npm run build
