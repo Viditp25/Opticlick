@@ -149,19 +149,104 @@ async function handleProxy(targetUrl, originalRequest) {
     }
 
     // Determine if we need to route through a CORS proxy (only in production / GitHub Pages)
-    // Production builds route through the third-party CORS proxy corsproxy.io because the sandbox running
+    // Production builds route through a CORS proxy because the sandbox running
     // on GitHub Pages (or any external origin) cannot directly fetch arbitrary URLs due to browser CORS security rules.
-    // NOTE: This introduces a dependency on corsproxy.io. If this public service fails, resolving target URLs in production will fail.
-    // Fallback considerations: set up a self-hosted CORS proxy, support an optional custom proxy URL via settings,
-    // or handle the failure gracefully by displaying a troubleshooting guide to the user.
+    // We use a fallback mechanism starting with allorigins.win (free, no domain restriction) for GET/HEAD,
+    // and fallback to corsproxy.io if needed.
     const isLocal = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
-    const fetchUrl = isLocal ? resolvedUrl : `https://corsproxy.io/?${encodeURIComponent(resolvedUrl)}`;
+    let resp;
+    let proxyUsed = 'none';
 
-    const resp = await fetch(fetchUrl, fetchInit);
+    if (isLocal) {
+      resp = await fetch(resolvedUrl, fetchInit);
+    } else {
+      const proxies = [];
+
+      // Check for user-configured custom proxy URL in Cache Storage
+      try {
+        const cache = await caches.open('opticlick-proxy-config');
+        const customResp = await cache.match('/proxy-url');
+        if (customResp) {
+          const customUrl = (await customResp.text()).trim();
+          if (customUrl) {
+            proxies.push({
+              name: 'custom-proxy',
+              getUrl: url => {
+                const separator = customUrl.includes('?') ? '&' : '?';
+                if (!customUrl.includes('url=')) {
+                  return `${customUrl}${separator}url=${encodeURIComponent(url)}`;
+                }
+                return customUrl.replace(/url=([^&]*)/, `url=${encodeURIComponent(url)}`);
+              }
+            });
+          }
+        }
+      } catch (e) {
+        console.warn('[SW] Failed to load custom proxy URL:', e);
+      }
+
+      // For GET/HEAD requests, allorigins.win is excellent, free and doesn't restrict custom domains
+      if (originalRequest.method === 'GET' || originalRequest.method === 'HEAD') {
+        proxies.push({
+          name: 'allorigins',
+          getUrl: url => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`
+        });
+      }
+
+      // corsproxy.io as fallback (or primary for POST/PUT)
+      proxies.push({
+        name: 'corsproxy.io',
+        getUrl: url => `https://corsproxy.io/?${encodeURIComponent(url)}`
+      });
+
+      let lastError = null;
+      for (const proxy of proxies) {
+        const fetchUrl = proxy.getUrl(resolvedUrl);
+        try {
+          const attemptResp = await fetch(fetchUrl, fetchInit);
+          
+          // Detect plan limit errors or service blocks from corsproxy.io
+          if (proxy.name === 'corsproxy.io' && attemptResp.status === 403) {
+            const ct = attemptResp.headers.get('content-type') || '';
+            if (ct.includes('application/json')) {
+              const text = await attemptResp.clone().text();
+              if (text.includes('Upgrade at https://corsproxy.io') || text.includes('Server-side requests are not allowed')) {
+                console.warn(`[Proxy] corsproxy.io blocked the request. Trying next proxy...`);
+                lastError = new Error('corsproxy.io billing/domain restriction');
+                continue;
+              }
+            }
+          }
+
+          resp = attemptResp;
+          proxyUsed = proxy.name;
+          break;
+        } catch (err) {
+          console.warn(`[Proxy] Fetch via ${proxy.name} failed:`, err);
+          lastError = err;
+        }
+      }
+
+      if (!resp) {
+        throw lastError || new Error('All CORS proxies failed');
+      }
+    }
     
     let finalUrl = resp.url || resolvedUrl;
-    if (finalUrl.startsWith('https://corsproxy.io/?')) {
+    if (proxyUsed === 'allorigins' && finalUrl.startsWith('https://api.allorigins.win/raw?url=')) {
+      finalUrl = decodeURIComponent(finalUrl.slice('https://api.allorigins.win/raw?url='.length));
+    } else if (proxyUsed === 'corsproxy.io' && finalUrl.startsWith('https://corsproxy.io/?')) {
       finalUrl = decodeURIComponent(finalUrl.slice('https://corsproxy.io/?'.length));
+    } else if (proxyUsed === 'custom-proxy') {
+      try {
+        const finalUrlObj = new URL(finalUrl);
+        const target = finalUrlObj.searchParams.get('url');
+        if (target) {
+          finalUrl = target;
+        }
+      } catch (e) {
+        // Fallback: not a parseable URL or lacks url parameter
+      }
     }
     resolvedUrl = finalUrl;
 
