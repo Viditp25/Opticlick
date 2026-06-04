@@ -36,7 +36,7 @@ jobs:
 
       - name: Build sandbox
         env:
-          VITE_BASE_PATH: /opticlick/previews/pr-${{ github.event.number }}/
+          VITE_BASE_PATH: /previews/pr-${{ github.event.number }}/
           VITE_PR_NUMBER: ${{ github.event.number }}
           VITE_BRANCH_NAME: ${{ github.head_ref }}
         run: npm run build
@@ -86,7 +86,7 @@ jobs:
 
             | | |
             |---|---|
-            | **Preview URL** | [${{ github.repository_owner }}.github.io/opticlick/previews/pr-${{ github.event.number }}/](https://${{ github.repository_owner }}.github.io/opticlick/previews/pr-${{ github.event.number }}/) |
+            | **Preview URL** | [opticlick.sudipmondal.co.in/previews/pr-${{ github.event.number }}/](https://opticlick.sudipmondal.co.in/previews/pr-${{ github.event.number }}/) |
             | **Branch** | `${{ github.head_ref }}` |
             | **Commit** | `${{ github.sha }}` |
 
