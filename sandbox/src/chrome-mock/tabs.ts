@@ -27,10 +27,13 @@ export function getCurrentUrl(): string {
   return currentUrl;
 }
 
+const BASE_URL = import.meta.env.BASE_URL || '/';
+const PROXY_PREFIX = `${BASE_URL.endsWith('/') ? BASE_URL : BASE_URL + '/'}__proxy__/`;
+
 export function proxyUrl(url: string): string {
   // Proxy through service worker for cross-origin pages
   if (url.startsWith('http://') || url.startsWith('https://')) {
-    return `/__proxy__/?url=${encodeURIComponent(url)}`;
+    return `${PROXY_PREFIX}?url=${encodeURIComponent(url)}`;
   }
   return url;
 }
