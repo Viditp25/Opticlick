@@ -80,13 +80,12 @@ export default tseslint.config(
     languageOptions: {
       globals: {
         ...globals.browser,
-        ...globals.worker,
+        ...globals.serviceworker,
       },
     },
     rules: {
       'no-useless-escape': 'off',
-      'no-undef': 'off',
-      'no-empty': 'off',
+      'no-empty': ['error', { allowEmptyCatch: true }],
       '@typescript-eslint/no-unused-vars': 'off',
     },
   },
@@ -97,6 +96,16 @@ export default tseslint.config(
     rules: {
       '@typescript-eslint/no-explicit-any': 'off',
       '@typescript-eslint/no-unused-vars': 'off',
+    },
+  },
+
+  // ── Scripts & Configuration Files ─────────────────────────────────────────
+  {
+    files: ['scripts/**/*.mjs', 'postcss.config.mjs'],
+    languageOptions: {
+      globals: {
+        ...globals.node,
+      },
     },
   },
 );

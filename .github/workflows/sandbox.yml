@@ -51,7 +51,7 @@ jobs:
           cp -r sandbox/dist/. deploy-preview/previews/pr-${{ github.event.number }}/
 
       - name: Deploy sandbox to gh-pages
-        uses: peaceiris/actions-gh-pages@v4
+        uses: peaceiris/actions-gh-pages@4f9cc6602d3f66b9c108549d475ec49e8ef4d45e
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./deploy-preview
@@ -59,7 +59,7 @@ jobs:
           keep_files: true
 
       - name: Post preview URL comment
-        uses: peter-evans/create-or-update-comment@v4
+        uses: peter-evans/create-or-update-comment@5005703541117ac4b73cf0094f9fd11d3f09a769
         with:
           issue-number: ${{ github.event.number }}
           body: |
@@ -111,7 +111,7 @@ jobs:
           fi
 
       - name: Update PR comment on close
-        uses: peter-evans/create-or-update-comment@v4
+        uses: peter-evans/create-or-update-comment@5005703541117ac4b73cf0094f9fd11d3f09a769
         with:
           issue-number: ${{ github.event.number }}
           body: |

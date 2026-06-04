@@ -23,6 +23,10 @@ class RuntimeEventBus {
     this.listeners.delete(listener);
   }
 
+  public has(listener: RuntimeListener): boolean {
+    return this.listeners.has(listener);
+  }
+
   public emit(message: any, sender: chrome.runtime.MessageSender, callback?: MessageCallback): void {
     for (const listener of this.listeners) {
       try {
@@ -58,9 +62,23 @@ export const runtimeShim = {
         return Promise.resolve({ started: false });
       }
       _agentRunning = true;
-      import('../agent-runner').then(({ runSandboxAgent }) => {
-        runSandboxAgent(message).finally(() => { _agentRunning = false; });
-      });
+      import('../agent-runner')
+        .then(({ runSandboxAgent }) => {
+          return runSandboxAgent(message);
+        })
+        .catch(error => {
+          console.error('[Runtime Shim] Error running sandbox agent:', error);
+          cb?.({ started: false, reason: 'crashed' });
+          runtimeEventBus.emit({
+            type: 'AGENT_STATE_CHANGE',
+            running: false,
+            reason: 'crashed',
+            error: error instanceof Error ? error.message : String(error)
+          }, { id: this.id } as any);
+        })
+        .finally(() => {
+          _agentRunning = false;
+        });
       cb?.({ started: true });
       return Promise.resolve({ started: true });
     }
@@ -86,7 +104,7 @@ export const runtimeShim = {
       runtimeEventBus.removeListener(listener);
     },
     hasListener(listener: RuntimeListener): boolean {
-      return false;
+      return runtimeEventBus.has(listener);
     }
   },
 
