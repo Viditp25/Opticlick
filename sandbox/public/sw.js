@@ -72,6 +72,12 @@ function saveCookiesFromHeaders(urlStr, headers) {
 
 self.addEventListener('fetch', event => {
   const url = new URL(event.request.url);
+
+  // In local dev mode, let the Vite dev server handle proxy requests server-side (Node.js) to bypass browser CORS restrictions.
+  if (url.hostname === 'localhost' || url.hostname === '127.0.0.1') {
+    return;
+  }
+
   const scopePath = new URL(self.registration.scope).pathname;
   const normalizedScope = scopePath.endsWith('/') ? scopePath : scopePath + '/';
   const proxyPrefix = getProxyPrefix();
