@@ -7,7 +7,6 @@ on:
     paths:
       - 'docs/**'
 
-# Permissions needed to write to the repository
 permissions:
   contents: write
 
@@ -20,36 +19,10 @@ jobs:
       - name: Checkout main branch
         uses: actions/checkout@v4
 
-      - name: Checkout or initialize gh-pages branch
-        run: |
-          if git ls-remote --exit-code --heads origin gh-pages; then
-            echo "gh-pages branch exists on remote. Cloning..."
-            git clone --branch gh-pages --single-branch https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git gh-pages-branch
-          else
-            echo "gh-pages branch does not exist. Initializing empty branch..."
-            mkdir gh-pages-branch
-            cd gh-pages-branch
-            git init
-            git config user.name "github-actions[bot]"
-            git config user.email "github-actions[bot]@users.noreply.github.com"
-            git checkout -b gh-pages
-            git remote add origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
-            echo "Opticlick Sandbox Previews Root" > README.md
-            git add README.md
-            git commit -m "Initialize gh-pages branch"
-            cd ..
-          fi
-
-      - name: Copy docs contents to gh-pages root
-        run: |
-          # Copy all landing pages and configuration from docs to the gh-pages root folder
-          cp -r docs/. gh-pages-branch/
-
-      - name: Commit and push main site to gh-pages
-        run: |
-          cd gh-pages-branch
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add .
-          git diff --staged --quiet || git commit -m "site: deploy main website from docs/ (${{ github.sha }})"
-          git push -u origin gh-pages
+      - name: Deploy landing page to gh-pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./docs
+          publish_branch: gh-pages
+          keep_files: true

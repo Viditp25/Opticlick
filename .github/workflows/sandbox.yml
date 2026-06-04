@@ -42,40 +42,18 @@ jobs:
         run: npm run build
         working-directory: sandbox
 
-      # Checkout or initialize gh-pages branch
-      - name: Checkout or initialize gh-pages
+      - name: Prepare preview folder
         run: |
-          if git ls-remote --exit-code --heads origin gh-pages; then
-            echo "gh-pages branch exists on remote. Cloning..."
-            git clone --branch gh-pages --single-branch https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git gh-pages-branch
-          else
-            echo "gh-pages branch does not exist. Initializing empty branch..."
-            mkdir gh-pages-branch
-            cd gh-pages-branch
-            git init
-            git config user.name "github-actions[bot]"
-            git config user.email "github-actions[bot]@users.noreply.github.com"
-            git checkout -b gh-pages
-            git remote add origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
-            echo "Opticlick Sandbox Previews Root" > README.md
-            git add README.md
-            git commit -m "Initialize gh-pages branch"
-            cd ..
-          fi
+          mkdir -p deploy-preview/previews/pr-${{ github.event.number }}
+          cp -r sandbox/dist/. deploy-preview/previews/pr-${{ github.event.number }}/
 
-      - name: Copy sandbox build to gh-pages
-        run: |
-          mkdir -p gh-pages-branch/previews/pr-${{ github.event.number }}
-          cp -r sandbox/dist/. gh-pages-branch/previews/pr-${{ github.event.number }}/
-
-      - name: Commit and push to gh-pages
-        run: |
-          cd gh-pages-branch
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add .
-          git diff --staged --quiet || git commit -m "sandbox: deploy preview for PR #${{ github.event.number }} (${{ github.sha }})"
-          git push -u origin gh-pages
+      - name: Deploy sandbox to gh-pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./deploy-preview
+          publish_branch: gh-pages
+          keep_files: true
 
       - name: Post preview URL comment
         uses: peter-evans/create-or-update-comment@v4
@@ -107,27 +85,25 @@ jobs:
     if: github.event.action == 'closed'
 
     steps:
-      - name: Checkout PR branch
+      - name: Checkout gh-pages
+        id: checkout
         uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+        continue-on-error: true
 
       - name: Remove preview directory
+        if: steps.checkout.outcome == 'success'
         run: |
-          if git ls-remote --exit-code --heads origin gh-pages; then
-            echo "gh-pages branch exists on remote. Checking for preview to clean up..."
-            git clone --branch gh-pages --single-branch https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git gh-pages-branch
-            cd gh-pages-branch
-            if [ -d "previews/pr-${{ github.event.number }}" ]; then
-              git config user.name "github-actions[bot]"
-              git config user.email "github-actions[bot]@users.noreply.github.com"
-              git rm -rf previews/pr-${{ github.event.number }}/
-              git commit -m "sandbox: remove preview for closed PR #${{ github.event.number }}"
-              git push
-              echo "Removed preview for PR #${{ github.event.number }}"
-            else
-              echo "No preview found for PR #${{ github.event.number }}, skipping."
-            fi
+          if [ -d "previews/pr-${{ github.event.number }}" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git rm -rf previews/pr-${{ github.event.number }}/
+            git commit -m "sandbox: remove preview for closed PR #${{ github.event.number }}"
+            git push
+            echo "Removed preview for PR #${{ github.event.number }}"
           else
-            echo "gh-pages branch does not exist on remote. Nothing to clean up."
+            echo "No preview found for PR #${{ github.event.number }}, skipping."
           fi
 
       - name: Update PR comment on close
