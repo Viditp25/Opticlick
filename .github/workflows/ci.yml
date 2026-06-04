@@ -11,7 +11,7 @@ jobs:
     name: Lint → Build → Test
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
       pull-requests: write
 
     steps:
@@ -55,6 +55,27 @@ jobs:
         if: always()
         with:
           file-coverage-mode: changes
+
+      - name: Prepare coverage report preview folder
+        id: prep-coverage
+        if: github.event_name == 'pull_request' && always()
+        run: |
+          if [ -d "coverage" ]; then
+            mkdir -p deploy-coverage/previews/pr-${{ github.event.number }}/coverage-report
+            cp -r coverage/. deploy-coverage/previews/pr-${{ github.event.number }}/coverage-report/
+            echo "coverage_exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "coverage_exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Deploy coverage report to gh-pages
+        if: github.event_name == 'pull_request' && steps.prep-coverage.outputs.coverage_exists == 'true'
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./deploy-coverage
+          publish_branch: gh-pages
+          keep_files: true
 
       - name: Package extension
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'

@@ -60,11 +60,12 @@ jobs:
         with:
           issue-number: ${{ github.event.number }}
           body: |
-            ## 🧪 Sandbox Preview
+            ## 🧪 Sandbox Preview & Coverage
 
             | | |
             |---|---|
             | **Preview URL** | [opticlick.sudipmondal.co.in/previews/pr-${{ github.event.number }}/](https://opticlick.sudipmondal.co.in/previews/pr-${{ github.event.number }}/) |
+            | **Coverage Report** | [opticlick.sudipmondal.co.in/previews/pr-${{ github.event.number }}/coverage-report/](https://opticlick.sudipmondal.co.in/previews/pr-${{ github.event.number }}/coverage-report/) |
             | **Branch** | `${{ github.head_ref }}` |
             | **Commit** | `${{ github.sha }}` |
 
