@@ -18,6 +18,8 @@ jobs:
     steps:
       - name: Checkout PR branch
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -50,10 +52,14 @@ jobs:
 
       # Save the PR number so the deploy workflow can use it
       - name: Save PR metadata
+        env:
+          PR_NUMBER: ${{ github.event.number }}
+          HEAD_REF: ${{ github.head_ref }}
+          SHA: ${{ github.sha }}
         run: |
-          echo "${{ github.event.number }}" > deploy-preview/PR_NUMBER
-          echo "${{ github.head_ref }}" > deploy-preview/HEAD_REF
-          echo "${{ github.sha }}" > deploy-preview/SHA
+          echo "$PR_NUMBER" > deploy-preview/PR_NUMBER
+          echo "$HEAD_REF" > deploy-preview/HEAD_REF
+          echo "$SHA" > deploy-preview/SHA
 
       - name: Upload preview artifact
         uses: actions/upload-artifact@v4
@@ -70,10 +76,13 @@ jobs:
 
     steps:
       - name: Save close metadata
+        env:
+          PR_NUMBER: ${{ github.event.number }}
+          HEAD_REF: ${{ github.head_ref }}
         run: |
           mkdir close-meta
-          echo "${{ github.event.number }}" > close-meta/PR_NUMBER
-          echo "${{ github.head_ref }}" > close-meta/HEAD_REF
+          echo "$PR_NUMBER" > close-meta/PR_NUMBER
+          echo "$HEAD_REF" > close-meta/HEAD_REF
 
       - name: Upload close metadata
         uses: actions/upload-artifact@v4
