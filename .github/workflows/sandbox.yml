@@ -30,6 +30,9 @@ jobs:
       - name: Install root dependencies
         run: npm ci
 
+      - name: Copy icons
+        run: npm run copy-icons
+
       - name: Install sandbox dependencies
         run: npm ci
         working-directory: sandbox

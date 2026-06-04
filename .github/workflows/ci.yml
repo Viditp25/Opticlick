@@ -27,6 +27,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Copy icons
+        run: npm run copy-icons
+
       # ── Lint ─────────────────────────────────────────────────────────────────
       - name: Lint
         run: npm run lint

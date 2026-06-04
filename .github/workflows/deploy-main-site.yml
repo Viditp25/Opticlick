@@ -19,6 +19,14 @@ jobs:
       - name: Checkout main branch
         uses: actions/checkout@v4
 
+      - name: Copy icons to docs
+        run: |
+          cp src/assets/icon-16.png docs/
+          cp src/assets/icon-32.png docs/
+          cp src/assets/icon-48.png docs/
+          cp src/assets/icon-128.png docs/
+          cp src/assets/icon.svg docs/
+
       - name: Deploy landing page to gh-pages
         uses: peaceiris/actions-gh-pages@v4
         with:
