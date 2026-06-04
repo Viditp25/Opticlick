@@ -6,8 +6,6 @@ import { LangSmithPanel } from './LangSmithPanel';
 // so chrome-mock must be fully installed before this import resolves.
 const SidepanelApp = React.lazy(() => import('@/entrypoints/sidepanel/App'));
 
-const PR_NUMBER = import.meta.env.VITE_PR_NUMBER;
-const BRANCH_NAME = import.meta.env.VITE_BRANCH_NAME;
 
 function SidebarLoadingFallback() {
   return (

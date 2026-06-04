@@ -7,7 +7,6 @@ interface MockBrowserProps {
 
 export function MockBrowser({ initialUrl = 'https://example.com' }: MockBrowserProps) {
   const [addressInput, setAddressInput] = useState(initialUrl);
-  const [currentUrl, setCurrentUrlState] = useState(initialUrl);
   const [isLoading, setIsLoading] = useState(false);
   const [isSecure, setIsSecure] = useState(true);
   const [swReady, setSwReady] = useState(false);
@@ -85,7 +84,6 @@ export function MockBrowser({ initialUrl = 'https://example.com' }: MockBrowserP
           } catch { /* parse failure fallback */ }
         }
         setAddressInput(displayUrl);
-        setCurrentUrlState(displayUrl);
         setCurrentUrl(displayUrl);
       }
     } catch { /* cross-origin frame guard */ }
@@ -94,6 +92,7 @@ export function MockBrowser({ initialUrl = 'https://example.com' }: MockBrowserP
   const handleRefresh = () => {
     if (iframeRef.current) {
       setIsLoading(true);
+      // eslint-disable-next-line no-self-assign
       iframeRef.current.src = iframeRef.current.src;
     }
   };
