@@ -99,8 +99,7 @@ function rewriteHtmlUrls(html: string, baseUrl: string): string {
   const baseTag = `<base href="${base.origin}${base.pathname}" />`;
   const proxy = (u: string) => proxyUrlNode(u, baseUrl);
 
-  return html
-    .replace(/<head([^>]*)>/i, `<head$1>${baseTag}`)
+  const rewritten = html
     .replace(/\bhref="((?!#|javascript:|mailto:|tel:)[^"]+)"/gi, (_, u) => `href="${proxy(u)}"`)
     .replace(/\bhref='((?!#|javascript:|mailto:|tel:)[^']+)'/gi, (_, u) => `href='${proxy(u)}'`)
     .replace(/\bsrc="([^"]+)"/gi, (_, u) => `src="${proxy(u)}"`)
@@ -108,6 +107,8 @@ function rewriteHtmlUrls(html: string, baseUrl: string): string {
     .replace(/\baction="([^"]+)"/gi, (_, u) => `action="${proxy(u)}"`)
     .replace(/\s+integrity="[^"]*"/gi, '')
     .replace(/\s+crossorigin(="[^"]*")?/gi, '');
+
+  return rewritten.replace(/<head([^>]*)>/i, `<head$1>${baseTag}`);
 }
 
 function injectContentScript(html: string): string {
