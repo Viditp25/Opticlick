@@ -13,14 +13,14 @@ export function MockBrowser({ initialUrl = 'https://example.com' }: MockBrowserP
   const [swReady, setSwReady] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
-  // Register iframe ref with tabs shim
+  // Sync iframe ref with chrome.tabs shim
   useEffect(() => {
     if (iframeRef.current) {
       setIframeRef(iframeRef.current);
     }
   }, []);
 
-  // Check service worker readiness
+  // Listen to Service Worker readiness before triggering navigation
   useEffect(() => {
     const checkSW = async () => {
       if (!('serviceWorker' in navigator)) {
@@ -30,10 +30,8 @@ export function MockBrowser({ initialUrl = 'https://example.com' }: MockBrowserP
       const reg = await navigator.serviceWorker.getRegistration('./');
       if (reg?.active) {
         setSwReady(true);
-        // Auto-navigate to initial URL once SW is ready
         navigate(initialUrl);
       } else {
-        // Wait for SW to become active
         navigator.serviceWorker.ready.then(() => {
           setSwReady(true);
           navigate(initialUrl);
@@ -48,9 +46,7 @@ export function MockBrowser({ initialUrl = 'https://example.com' }: MockBrowserP
     let target = url.trim();
     if (!target) return;
 
-    // Auto-add protocol
     if (!target.startsWith('http://') && !target.startsWith('https://')) {
-      // Check if it looks like a URL or a search query
       if (target.includes('.') && !target.includes(' ')) {
         target = 'https://' + target;
       } else {
@@ -86,13 +82,13 @@ export function MockBrowser({ initialUrl = 'https://example.com' }: MockBrowserP
             const urlObj = new URL(iframeUrl);
             const target = urlObj.searchParams.get('url');
             if (target) displayUrl = target;
-          } catch { /* */ }
+          } catch { /* parse failure fallback */ }
         }
         setAddressInput(displayUrl);
         setCurrentUrlState(displayUrl);
         setCurrentUrl(displayUrl);
       }
-    } catch { /* cross-origin, ignore */ }
+    } catch { /* cross-origin frame guard */ }
   };
 
   const handleRefresh = () => {
@@ -158,7 +154,7 @@ export function MockBrowser({ initialUrl = 'https://example.com' }: MockBrowserP
         {/* SW status indicator */}
         {!swReady && (
           <span
-            title="Service worker not ready. Proxy may not work."
+            title="Service worker initializing..."
             style={{ fontSize: 16, cursor: 'help' }}
           >
             ⚠️
@@ -183,9 +179,9 @@ export function MockBrowser({ initialUrl = 'https://example.com' }: MockBrowserP
             <button
               className="browser-address-go"
               style={{
-                background: 'rgba(99,102,241,0.2)',
-                border: '1px solid rgba(99,102,241,0.4)',
-                color: '#a5b4fc',
+                background: 'rgba(14, 165, 233, 0.2)',
+                border: '1px solid rgba(14, 165, 233, 0.4)',
+                color: '#7dd3fc',
                 padding: '6px 14px',
                 borderRadius: 6,
                 cursor: 'pointer',
@@ -203,7 +199,7 @@ export function MockBrowser({ initialUrl = 'https://example.com' }: MockBrowserP
           ref={iframeRef}
           className="browser-iframe"
           title="Mock Browser"
-          sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-downloads"
+          sandbox="allow-scripts allow-same-origin allow-forms"
           onLoad={handleIframeLoad}
           style={{ display: swReady ? 'block' : 'none' }}
         />

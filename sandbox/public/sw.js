@@ -1,102 +1,157 @@
 /**
- * Opticlick Sandbox Service Worker
+ * Opticlick Sandbox Service Worker Proxy
  *
- * Acts as a transparent proxy for the mock browser iframe:
- * 1. Intercepts requests to /__proxy__/?url=<target>
- * 2. Fetches the target URL
- * 3. Strips X-Frame-Options and restrictive CSP headers
- * 4. Rewrites all absolute/relative URLs in HTML to go through the proxy
- * 5. Injects the Opticlick content script shim at end of <body>
- * 6. Returns the modified response from the sandbox origin (making it same-origin)
+ * Designed to run 100% statically under any dynamic scope (e.g. /opticlick/previews/pr-N/).
+ * Features:
+ * 1. Virtual Cookie Jar (domain-keyed Map for Cookie/Set-Cookie management).
+ * 2. Scoped redirection/interception of un-proxied iframe requests (dynamic fetches).
+ * 3. CSP and X-Frame-Options stripping.
+ * 4. Content script shim injection.
  */
 
-const PROXY_PREFIX = '/__proxy__/';
 const CONTENT_SCRIPT_ID = '__opticlick_cs__';
+const cookieJar = new Map(); // domain -> Map(name -> value)
 
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', e => e.waitUntil(self.clients.claim()));
 
+/**
+ * Resolves the dynamic proxy prefix based on Service Worker registration scope.
+ */
+function getProxyPrefix() {
+  const scopePath = new URL(self.registration.scope).pathname;
+  return scopePath + (scopePath.endsWith('/') ? '' : '/') + '__proxy__/';
+}
+
+/**
+ * Cookie Jar: Outbound helper to fetch and inject domain-specific cookies.
+ */
+function getCookiesForUrl(urlStr) {
+  try {
+    const url = new URL(urlStr);
+    const domain = url.hostname;
+    const cookies = [];
+    for (const [jarDomain, jarCookies] of cookieJar.entries()) {
+      if (domain === jarDomain || domain.endsWith('.' + jarDomain)) {
+        for (const [name, val] of jarCookies.entries()) {
+          cookies.push(`${name}=${val}`);
+        }
+      }
+    }
+    return cookies.join('; ');
+  } catch (e) {
+    return '';
+  }
+}
+
+/**
+ * Cookie Jar: Inbound helper to parse and save Set-Cookie headers.
+ */
+function saveCookiesFromHeaders(urlStr, headers) {
+  try {
+    const url = new URL(urlStr);
+    const domain = url.hostname;
+    const setCookies = headers.getSetCookie ? headers.getSetCookie() : [];
+    if (setCookies.length === 0) {
+      const raw = headers.get('set-cookie');
+      if (raw) setCookies.push(raw);
+    }
+    for (const cookieStr of setCookies) {
+      const parts = cookieStr.split(';')[0].split('=');
+      if (parts.length >= 2) {
+        const name = parts[0].trim();
+        const val = parts.slice(1).join('=').trim();
+        if (!cookieJar.has(domain)) {
+          cookieJar.set(domain, new Map());
+        }
+        cookieJar.get(domain).set(name, val);
+      }
+    }
+  } catch (e) {}
+}
+
 self.addEventListener('fetch', event => {
   const url = new URL(event.request.url);
+  const scopePath = new URL(self.registration.scope).pathname;
+  const normalizedScope = scopePath.endsWith('/') ? scopePath : scopePath + '/';
+  const proxyPrefix = getProxyPrefix();
 
-  // In local dev mode, let the Vite dev server handle proxy requests server-side (Node.js) to bypass browser CORS restrictions.
-  if (url.hostname === 'localhost' || url.hostname === '127.0.0.1') {
-    return;
+  // 1. If it's explicitly a proxy request
+  if (url.pathname.startsWith(proxyPrefix) || url.pathname.includes('/__proxy__/')) {
+    const target = url.searchParams.get('url');
+    if (target) {
+      event.respondWith(handleProxy(target, event.request));
+      return;
+    }
   }
 
-  if (!url.pathname.startsWith(PROXY_PREFIX)) return;
+  // 2. Intercept un-proxied iframe requests (e.g. relative dynamic AJAX, CSS, images)
+  const referer = event.request.referrer;
+  if (referer && (referer.includes('/__proxy__/?url=') || referer.includes('/__proxy__?url='))) {
+    try {
+      const refererUrl = new URL(referer);
+      const originalTargetPage = refererUrl.searchParams.get('url');
+      if (originalTargetPage) {
+        const isRelative = url.origin === location.origin;
+        const resolvedTargetUrl = isRelative
+          ? new URL(url.pathname + url.search, originalTargetPage).href
+          : url.href;
 
-  const target = url.searchParams.get('url');
-  if (!target) return;
-
-  event.respondWith(handleProxy(target, event.request));
+        // Skip assets belonging to the sandbox React app itself
+        const isSandboxAsset = url.pathname.startsWith(normalizedScope + 'src/') ||
+                               url.pathname.startsWith(normalizedScope + 'node_modules/') ||
+                               url.pathname.includes('/@vite/') ||
+                               url.pathname.includes('/@fs/');
+        if (!isSandboxAsset) {
+          event.respondWith(handleProxy(resolvedTargetUrl, event.request));
+          return;
+        }
+      }
+    } catch (e) {
+      console.error('[SW] Referrer parsing failed:', e);
+    }
+  }
 });
 
 async function handleProxy(targetUrl, originalRequest) {
   let resolvedUrl = targetUrl;
 
   try {
+    const headers = buildProxyHeaders(originalRequest.headers, targetUrl);
     const fetchInit = {
-      method: originalRequest.method === 'GET' ? 'GET' : originalRequest.method,
-      headers: buildProxyHeaders(originalRequest.headers),
+      method: originalRequest.method,
+      headers: headers,
       redirect: 'follow',
       credentials: 'omit',
       cache: 'no-store',
     };
 
-    let resp;
-    try {
-      resp = await fetch(resolvedUrl, fetchInit);
-    } catch (firstErr) {
-      // Some browsers block http→https fetches from SW in dev mode.
-      // Try with mode: 'no-cors' as last resort (returns opaque response).
-      try {
-        resp = await fetch(resolvedUrl, { ...fetchInit, mode: 'no-cors' });
-      } catch {
-        throw firstErr; // throw original error
-      }
+    if (originalRequest.method !== 'GET' && originalRequest.method !== 'HEAD') {
+      fetchInit.body = await originalRequest.clone().arrayBuffer();
     }
 
-    // Opaque response (no-cors) — can't read body, serve a redirect page instead
-    if (resp.type === 'opaque' || resp.status === 0) {
-      const redirectHtml = `<!DOCTYPE html>
-<html><head><meta charset="utf-8">
-<style>body{font-family:sans-serif;padding:2rem;background:#f8fafc;color:#1e293b;max-width:600px;margin:auto}</style>
-</head><body>
-<h2>🔒 This site requires direct access</h2>
-<p>The proxy couldn't load <strong>${targetUrl}</strong> due to browser security restrictions in local dev mode.</p>
-<p>This works fine when deployed to GitHub Pages (HTTPS). In local dev, try sites that allow cross-origin requests.</p>
-<hr>
-<p><strong>Suggested test sites:</strong></p>
-<ul>
-  <li><a href="/__proxy__/?url=https://example.com" onclick="event.preventDefault();parent.postMessage({__opticlick_navigate__:true,url:'https://en.wikipedia.org/wiki/Main_Page'},'*')">en.wikipedia.org</a></li>
-  <li><a href="/__proxy__/?url=https://httpbin.org/html">httpbin.org/html</a></li>
-  <li><a href="/__proxy__/?url=https://news.ycombinator.com">news.ycombinator.com</a></li>
-</ul>
-</body></html>`;
-      return new Response(redirectHtml, { status: 200, headers: { 'content-type': 'text/html; charset=utf-8' } });
-    }
-
-    // Track final URL after redirects
+    const resp = await fetch(resolvedUrl, fetchInit);
     resolvedUrl = resp.url || resolvedUrl;
 
-    const headers = new Headers();
-    // Copy safe headers, strip anything that would block embedding
+    // Save outbound cookies
+    saveCookiesFromHeaders(resolvedUrl, resp.headers);
+
+    const responseHeaders = new Headers();
+    const BLOCKED_HEADERS = new Set([
+      'x-frame-options', 'content-security-policy',
+      'content-security-policy-report-only', 'x-content-type-options',
+      'strict-transport-security', 'cross-origin-opener-policy',
+      'cross-origin-embedder-policy', 'cross-origin-resource-policy',
+      'set-cookie', 'set-cookie2',
+      'content-encoding', 'content-length'
+    ]);
+
     for (const [k, v] of resp.headers.entries()) {
-      const lower = k.toLowerCase();
-      if (
-        lower === 'x-frame-options' ||
-        lower === 'content-security-policy' ||
-        lower === 'content-security-policy-report-only' ||
-        lower === 'x-content-type-options' ||
-        lower === 'strict-transport-security' ||
-        lower === 'cross-origin-opener-policy' ||
-        lower === 'cross-origin-embedder-policy' ||
-        lower === 'cross-origin-resource-policy'
-      ) continue;
-      headers.set(k, v);
+      if (!BLOCKED_HEADERS.has(k.toLowerCase())) {
+        responseHeaders.set(k, v);
+      }
     }
-    headers.set('access-control-allow-origin', '*');
+    responseHeaders.set('access-control-allow-origin', '*');
 
     const ct = resp.headers.get('content-type') ?? '';
     const isHtml = ct.includes('text/html');
@@ -106,78 +161,66 @@ async function handleProxy(targetUrl, originalRequest) {
       let html = await resp.text();
       html = rewriteHtml(html, resolvedUrl);
       html = injectContentScript(html);
-      headers.set('content-type', 'text/html; charset=utf-8');
-      return new Response(html, { status: resp.status, headers });
+      responseHeaders.set('content-type', 'text/html; charset=utf-8');
+      return new Response(html, { status: resp.status, headers: responseHeaders });
     }
 
     if (isCss) {
       let css = await resp.text();
       css = rewriteCssUrls(css, resolvedUrl);
-      return new Response(css, { status: resp.status, headers });
+      return new Response(css, { status: resp.status, headers: responseHeaders });
     }
 
-    // Binary/other: pass through
-    return new Response(resp.body, { status: resp.status, headers });
+    return new Response(resp.body, { status: resp.status, headers: responseHeaders });
 
   } catch (err) {
-    const isNetworkErr = err.message?.includes('fetch') || err.message?.includes('network') || err.name === 'TypeError';
     return new Response(
       `<!DOCTYPE html><html><body style="font-family:sans-serif;padding:2rem;background:#1a1a2e;color:#e2e8f0;">
-        <h2 style="color:#f87171">⚠️ Cannot proxy this page</h2>
+        <h2 style="color:#f87171">⚠️ Proxy Error</h2>
         <p>URL: <code>${targetUrl}</code></p>
         <p>Error: ${err.message}</p>
-        ${isNetworkErr ? `<p style="color:#94a3b8;font-size:13px">💡 In local dev mode, some sites block cross-origin requests from the proxy.
-        Try: <a href="/__proxy__/?url=https://httpbin.org/html" style="color:#60a5fa">httpbin.org/html</a> or
-        <a href="/__proxy__/?url=https://en.wikipedia.org/wiki/Main_Page" style="color:#60a5fa">wikipedia.org</a></p>` : ''}
       </body></html>`,
-      { status: 502, headers: { 'content-type': 'text/html; charset=utf-8' } }
+      { status: 502, headers: { 'content-type': 'text/html; charset=utf-8', 'access-control-allow-origin': '*' } }
     );
   }
 }
 
-function buildProxyHeaders(originalHeaders) {
+function buildProxyHeaders(originalHeaders, targetUrl) {
   const h = new Headers();
-  // Forward safe request headers + spoof a real browser User-Agent
+  for (const [k, v] of originalHeaders.entries()) {
+    const lower = k.toLowerCase();
+    if (lower === 'cookie' || lower === 'referer' || lower === 'host' || lower === 'origin') {
+      continue;
+    }
+    h.set(k, v);
+  }
+
+  const cookies = getCookiesForUrl(targetUrl);
+  if (cookies) {
+    h.set('Cookie', cookies);
+  }
+
   h.set('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
   h.set('Accept', 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8');
   h.set('Accept-Language', 'en-US,en;q=0.9');
-  const v = originalHeaders.get('cache-control');
-  if (v) h.set('Cache-Control', v);
   return h;
 }
 
-
-/**
- * Rewrite all URLs in HTML to go through the proxy.
- * Handles: href, src, action, srcset, data-src, @import in <style> blocks.
- */
 function rewriteHtml(html, baseUrl) {
-  // Inject <base> to handle relative URLs
   const base = new URL(baseUrl);
   const baseTag = `<base href="${base.origin}${base.pathname}" />`;
 
-  // Rewrite src and href attributes
   html = html
-    // Rewrite href="..."
     .replace(/\bhref="((?!#|javascript:|mailto:|tel:)[^"]+)"/gi, (_, u) => `href="${proxyUrl(u, baseUrl)}"`)
     .replace(/\bhref='((?!#|javascript:|mailto:|tel:)[^']+)'/gi, (_, u) => `href='${proxyUrl(u, baseUrl)}'`)
-    // Rewrite src="..."
     .replace(/\bsrc="([^"]+)"/gi, (_, u) => `src="${proxyUrl(u, baseUrl)}"`)
     .replace(/\bsrc='([^']+)'/gi, (_, u) => `src='${proxyUrl(u, baseUrl)}'`)
-    // Rewrite action="..."
     .replace(/\baction="([^"]+)"/gi, (_, u) => `action="${proxyUrl(u, baseUrl)}"`)
-    // Rewrite srcset
     .replace(/\bsrcset="([^"]+)"/gi, (_, s) => `srcset="${rewriteSrcset(s, baseUrl)}"`)
-    // Rewrite <link rel="stylesheet">
-    // Already handled by href above
-    // Remove integrity attributes (would fail after rewrite)
     .replace(/\s+integrity="[^"]*"/gi, '')
     .replace(/\s+crossorigin(="[^"]*")?/gi, '');
 
-  // Inject base tag after <head>
-  html = html.replace(/<head([^>]*)>/i, `<head$1>${baseTag}`);
-
-  return html;
+  return html.replace(/<head([^>]*)>/i, `<head$1>${baseTag}`);
 }
 
 function rewriteSrcset(srcset, baseUrl) {
@@ -199,7 +242,8 @@ function proxyUrl(url, baseUrl) {
   try {
     const abs = new URL(url, baseUrl).href;
     if (abs.startsWith('http://') || abs.startsWith('https://')) {
-      return `/__proxy__/?url=${encodeURIComponent(abs)}`;
+      const prefix = getProxyPrefix();
+      return `${prefix}?url=${encodeURIComponent(abs)}`;
     }
     return url;
   } catch {
@@ -207,10 +251,6 @@ function proxyUrl(url, baseUrl) {
   }
 }
 
-/**
- * Inject the Opticlick content script shim into the page.
- * This mimics what the real extension's content.ts does.
- */
 function injectContentScript(html) {
   const script = `
 <script id="${CONTENT_SCRIPT_ID}">
