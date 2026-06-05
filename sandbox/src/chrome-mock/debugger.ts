@@ -63,6 +63,13 @@ export async function typeTextCDP(tabId: number, text: string, _clearField = fal
 export async function dispatchScrollWheel(tabId: number, cssX: number, cssY: number, deltaX: number, deltaY: number): Promise<void> {
   await debuggerShim.sendCommand({ tabId }, 'Input.dispatchMouseEvent', { type: 'mouseWheel', x: cssX, y: cssY, deltaX, deltaY });
 }
+export async function dispatchDragAndDrop(
+    _tabId: number,
+    _sourceCoords: { x: number; y: number },
+    _targetCoords: { x: number; y: number },
+  ): Promise<void> {
+    // no-op sandbox implementation
+}
 
 // File upload helpers — mock implementation to persist base64 data for sandbox DOM.setFileInputFiles
 export async function writeTempFile(
