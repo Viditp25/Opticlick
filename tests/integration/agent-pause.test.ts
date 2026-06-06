@@ -1,10 +1,13 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { getAgentState, setAgentState } from '@/utils/agent-state';
 import { stepSetupNode } from '@/entrypoints/background/nodes/setup';
 import type { AgentState } from '@/entrypoints/background/agent-state';
 
 describe('Agent Pause/Resume Integration Tests', () => {
   beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setTimerTickMode('nextTimerAsync');
+
     // Mock chrome.tabs.sendMessage to avoid errors in sendToTab
     (globalThis.chrome.tabs as any) = {
       sendMessage: vi.fn((tabId, msg, options, cb) => {
@@ -18,6 +21,10 @@ describe('Agent Pause/Resume Integration Tests', () => {
     (globalThis.chrome.scripting as any) = {
       executeScript: vi.fn().mockResolvedValue([]),
     };
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it('runs normally when status is running', async () => {

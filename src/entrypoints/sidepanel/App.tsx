@@ -340,18 +340,16 @@ const refreshSessions = useCallback(async () => {
     });
   };
 
-  const handlePause = () => {
+  const handlePause = async () => {
     appendLog('Pause requested.', 'act');
-    chrome.runtime.sendMessage({ type: 'PAUSE_AGENT' });
-    setIsRunning(false);
-    setIsPaused(true);
+    await chrome.runtime.sendMessage({ type: 'PAUSE_AGENT' });
+    await syncState();
   };
 
-  const handleResume = () => {
+  const handleResume = async () => {
     appendLog('Resume requested.', 'act');
-    chrome.runtime.sendMessage({ type: 'RESUME_AGENT' });
-    setIsRunning(true);
-    setIsPaused(false);
+    await chrome.runtime.sendMessage({ type: 'RESUME_AGENT' });
+    await syncState();
   };
 
   const handleStop = () => {

@@ -67,7 +67,8 @@ export async function runAgentLoop(
   }
 
   const currentAgentState = await getAgentState();
-  const initialStep = (existingSessionId != null && currentAgentState?.sessionId === existingSessionId)
+  const isStateActive = currentAgentState?.status === 'running' || currentAgentState?.status === 'paused';
+  const initialStep = (existingSessionId != null && currentAgentState?.sessionId === existingSessionId && isStateActive)
     ? currentAgentState.step
     : 0;
 

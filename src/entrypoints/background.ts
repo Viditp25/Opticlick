@@ -107,41 +107,49 @@ export default defineBackground(() => {
 
     if (msg.type === 'PAUSE_AGENT') {
       getAgentState().then((state) => {
-        if (state && state.sessionId) {
+        if (!state || state.status !== 'running') {
+          sendResponse({ paused: false, error: 'invalid_transition', reason: 'Agent is not running' });
+          return;
+        }
+        if (state.sessionId) {
           appendConversationTurn(state.sessionId, 'pause', 'Agent paused by user').catch(() => {});
         }
-      });
-      setAgentState({ status: 'paused' }).then(() => {
-        chrome.runtime.sendMessage({ type: 'AGENT_PAUSED' }).catch(() => {});
-        chrome.runtime.sendMessage({ type: 'AGENT_STATE_CHANGE' }).catch(() => {});
-        sendResponse({ paused: true });
+        setAgentState({ status: 'paused' }).then(() => {
+          chrome.runtime.sendMessage({ type: 'AGENT_PAUSED' }).catch(() => {});
+          chrome.runtime.sendMessage({ type: 'AGENT_STATE_CHANGE' }).catch(() => {});
+          sendResponse({ paused: true });
+        });
       });
     }
 
     if (msg.type === 'RESUME_AGENT') {
       getAgentState().then((state) => {
-        if (state && state.sessionId) {
+        if (!state || state.status !== 'paused') {
+          sendResponse({ resumed: false, error: 'invalid_transition', reason: 'Agent is not paused' });
+          return;
+        }
+        if (state.sessionId) {
           appendConversationTurn(state.sessionId, 'resume', 'Agent resumed by user').catch(() => {});
         }
-      });
-      setAgentState({ status: 'running' }).then(async (state) => {
-        chrome.runtime.sendMessage({ type: 'AGENT_RESUMED' }).catch(() => {});
-        chrome.runtime.sendMessage({ type: 'AGENT_STATE_CHANGE' }).catch(() => {});
+        setAgentState({ status: 'running' }).then(async (updatedState) => {
+          chrome.runtime.sendMessage({ type: 'AGENT_RESUMED' }).catch(() => {});
+          chrome.runtime.sendMessage({ type: 'AGENT_STATE_CHANGE' }).catch(() => {});
 
-        if (!loopRunning && state.tabId && state.prompt && state.sessionId) {
-          loopRunning = true;
-          const stored = await chrome.storage.local.get(['selectedModel']);
-          const modelId = stored.selectedModel as string | undefined;
-          runAgentLoop(state.tabId, state.prompt, state.sessionId, undefined, modelId)
-            .catch(async (err) => {
-              await log(`Fatal: ${(err as Error).message}`, 'error');
-            })
-            .finally(() => {
-              loopRunning = false;
-            });
-        }
+          if (!loopRunning && updatedState.tabId && updatedState.prompt && updatedState.sessionId) {
+            loopRunning = true;
+            const stored = await chrome.storage.local.get(['selectedModel']);
+            const modelId = stored.selectedModel as string | undefined;
+            runAgentLoop(updatedState.tabId, updatedState.prompt, updatedState.sessionId, undefined, modelId)
+              .catch(async (err) => {
+                await log(`Fatal: ${(err as Error).message}`, 'error');
+              })
+              .finally(() => {
+                loopRunning = false;
+              });
+          }
 
-        sendResponse({ resumed: true });
+          sendResponse({ resumed: true });
+        });
       });
     }
 
