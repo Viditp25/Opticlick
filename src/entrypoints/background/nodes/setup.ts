@@ -19,8 +19,41 @@ import { MAX_STEPS, MAX_EMPTY_RETRIES } from '../agent-state';
 
 // ── Node: stepSetup ───────────────────────────────────────────────────────────
 
+async function getAgentStatus(sessionId: string): Promise<string | null> {
+  const state = await getAgentState();
+  if (!state || state.sessionId?.toString() !== sessionId) return null;
+  return state.status;
+}
+
+async function waitForResume(sessionId: string): Promise<void> {
+  while (true) {
+    const status = await getAgentStatus(sessionId);
+    if (status !== 'paused') return;
+    await sleep(500);
+  }
+}
+
 export async function stepSetupNode(state: AgentState): Promise<Partial<AgentState>> {
-  const agentState = await getAgentState();
+  let agentState = await getAgentState();
+  if (!agentState) {
+    return { stopped: true };
+  }
+
+  if (agentState.status === 'paused') {
+    try {
+      await sendToTab(state.tabId, { type: 'UNBLOCK_INPUT' });
+    } catch { /* ignore */ }
+
+    await waitForResume(agentState.sessionId?.toString() || '');
+
+    agentState = await getAgentState();
+    if (agentState && agentState.status === 'running') {
+      try {
+        await sendToTab(state.tabId, { type: 'BLOCK_INPUT' });
+      } catch { /* ignore */ }
+    }
+  }
+
   if (!agentState || agentState.status !== 'running') {
     await log('Agent stopped by user.', 'warn');
     return { stopped: true };

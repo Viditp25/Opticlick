@@ -81,6 +81,7 @@ function AgentUI() {
   const [pendingQuestion, setPendingQuestion] = useState<string | null>(null);
   const [replyInput, setReplyInput] = useState('');
   const [isRunning, setIsRunning] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
   const [isError, setIsError] = useState(false);
   const [logs, setLogs] = useState<LogItem[]>([]);
   const [step, setStep] = useState(0);
@@ -254,6 +255,7 @@ const refreshSessions = useCallback(async () => {
     const { agentState } = (await chrome.storage.session.get('agentState')) as { agentState?: AgentState };
     if (!agentState) return;
     setIsRunning(agentState.status === 'running');
+    setIsPaused(agentState.status === 'paused');
     setIsError(agentState.status === 'error');
     if (agentState.step > 0) setStep(agentState.step);
     if (agentState.sessionId != null) setCurrentSessionId(agentState.sessionId);
@@ -294,6 +296,8 @@ const refreshSessions = useCallback(async () => {
         });
       }
       if (msg.type === 'AGENT_STATE_CHANGE') syncState();
+      if (msg.type === 'AGENT_PAUSED') syncState();
+      if (msg.type === 'AGENT_RESUMED') syncState();
       if (msg.type === 'ASK_USER') setPendingQuestion(msg.question as string);
       if (msg.type === 'PLAY_SOUND') playSound(msg.sound as 'finish' | 'ask');
     };
@@ -334,10 +338,25 @@ const refreshSessions = useCallback(async () => {
     });
   };
 
+  const handlePause = () => {
+    appendLog('Pause requested.', 'act');
+    chrome.runtime.sendMessage({ type: 'PAUSE_AGENT' });
+    setIsRunning(false);
+    setIsPaused(true);
+  };
+
+  const handleResume = () => {
+    appendLog('Resume requested.', 'act');
+    chrome.runtime.sendMessage({ type: 'RESUME_AGENT' });
+    setIsRunning(true);
+    setIsPaused(false);
+  };
+
   const handleStop = () => {
     appendLog('Stop requested.', 'act');
     chrome.runtime.sendMessage({ type: 'STOP_AGENT' });
     setIsRunning(false);
+    setIsPaused(false);
     setPendingQuestion(null);
     setReplyInput('');
   };
@@ -381,6 +400,10 @@ const refreshSessions = useCallback(async () => {
         }
       } else if (turn.role === 'model') {
         steps.push(...parseModelTurn(turn.content));
+      } else if (turn.role === 'pause') {
+        steps.push({ kind: 'pause', text: turn.content });
+      } else if (turn.role === 'resume') {
+        steps.push({ kind: 'resume', text: turn.content });
       }
     }
     setHistorySteps(steps);
@@ -511,7 +534,7 @@ const refreshSessions = useCallback(async () => {
         />
       )}
 
-      {isRunning && step > 0 && <StepFooter step={step} />}
+      {(isRunning || isPaused) && step > 0 && <StepFooter step={step} isPaused={isPaused} />}
 
       {/* Agent question prompt */}
       {pendingQuestion && (
@@ -544,6 +567,9 @@ const refreshSessions = useCallback(async () => {
       <ChatInput
         key={chatInputKey}
         isRunning={isRunning}
+        isPaused={isPaused}
+        onPause={handlePause}
+        onResume={handleResume}
         textareaRef={textareaRef}
         onRun={handleRun}
         onStop={handleStop}

@@ -66,7 +66,12 @@ export async function runAgentLoop(
     });
   }
 
-  await setAgentState({ status: 'running', tabId, step: 0, prompt: userPrompt, sessionId });
+  const currentAgentState = await getAgentState();
+  const initialStep = (existingSessionId != null && currentAgentState?.sessionId === existingSessionId)
+    ? currentAgentState.step
+    : 0;
+
+  await setAgentState({ status: 'running', tabId, step: initialStep, prompt: userPrompt, sessionId });
 
   // Seed VFS with any user-attached files
   if (attachments?.length) {
@@ -192,7 +197,7 @@ export async function runAgentLoop(
       anchoredPrompt,
       model,
       attachments: attachments ?? [],
-      step: 0,
+      step: initialStep,
       emptyRetries: 0,
       actionHistory: [],
       retryStep: false,
