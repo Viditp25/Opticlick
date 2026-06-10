@@ -23,6 +23,7 @@ import { ChatInput } from './components/ChatInput';
 import { ChatFeed } from './components/ChatFeed';
 import { SessionsOverlay } from './components/SessionsOverlay';
 import { TemplatesOverlay } from './components/TemplatesOverlay';
+import { CustomInstructionsOverlay } from './components/CustomInstructionsOverlay';
 import type { LogItem, HistoryStep } from './components/ChatFeed';
 
 // ── Parse model turn from IndexedDB ──────────────────────────────────────────
@@ -102,6 +103,7 @@ function AgentUI() {
 
   const [templates, setTemplates] = useState<PromptTemplate[]>([]);
   const [showTemplates, setShowTemplates] = useState(false);
+  const [showCustomInstructions, setShowCustomInstructions] = useState(false);
   const [injectedPrompt, setInjectedPrompt] = useState<string | null>(null);
 
   const feedRef = useRef<HTMLDivElement>(null);
@@ -453,6 +455,12 @@ function AgentUI() {
         />
       )}
 
+      {showCustomInstructions && (
+        <CustomInstructionsOverlay
+          onClose={() => setShowCustomInstructions(false)}
+        />
+      )}
+
       <Header
         isRunning={isRunning}
         isError={isError}
@@ -460,6 +468,7 @@ function AgentUI() {
         onShowSessions={() => setShowSessions(true)}
         onShowApiKeys={() => setShowApiKeys(true)}
         onShowTemplates={() => setShowTemplates(true)}
+        onShowCustomInstructions={() => setShowCustomInstructions(true)}
       />
       <div className="flex border-b border-slate-200 dark:border-slate-700">
         <button
